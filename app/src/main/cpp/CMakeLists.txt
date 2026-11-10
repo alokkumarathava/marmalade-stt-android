@@ -80,7 +80,31 @@ set(SHERPA_ONNX_ENABLE_JNI ON CACHE BOOL "" FORCE)
 # strings (log macros) become repo-relative third_party/<name>/ paths, the
 # same in every checkout. A patched file's strings name the submodule's file,
 # but its __LINE__ numbers are the patched copy's.
-find_program(PATCH_EXECUTABLE patch REQUIRED)
+find_program(PATCH_EXECUTABLE
+  NAMES patch patch.exe
+  HINTS
+    "C:/Program Files/Git/usr/bin"
+    "C:/Program Files (x86)/Git/usr/bin"
+    "$ENV{LOCALAPPDATA}/Programs/Git/usr/bin"
+    "$ENV{ProgramFiles}/Git/usr/bin"
+    "$ENV{ProgramFiles\(x86\)}/Git/usr/bin"
+)
+
+if(NOT PATCH_EXECUTABLE)
+  find_program(GIT_EXECUTABLE
+    NAMES git git.exe
+    HINTS
+      "C:/Program Files/Git/cmd"
+      "C:/Program Files (x86)/Git/cmd"
+      "$ENV{LOCALAPPDATA}/Programs/Git/cmd"
+      "$ENV{ProgramFiles}/Git/cmd"
+      "$ENV{ProgramFiles\(x86\)}/Git/cmd"
+  )
+  if(NOT GIT_EXECUTABLE)
+    message(FATAL_ERROR "Could not find 'patch' or 'git' executable to apply patches.")
+  endif()
+endif()
+
 function(patched_copy name copy)
   set(src "${THIRD_PARTY_DIR}/${name}")
   file(GLOB patches CONFIGURE_DEPENDS "${THIRD_PARTY_DIR}/patches/${name}/*.patch")
@@ -102,9 +126,15 @@ function(patched_copy name copy)
   foreach(p ${patches})
     # --fuzz=0: a patch whose context no longer matches exactly fails here
     # instead of landing a few lines off.
-    execute_process(
-      COMMAND "${PATCH_EXECUTABLE}" -p1 --forward --batch --fuzz=0 --no-backup-if-mismatch --quiet -i "${p}"
-      WORKING_DIRECTORY "${copy}" RESULT_VARIABLE rc)
+    if(PATCH_EXECUTABLE)
+      execute_process(
+        COMMAND "${PATCH_EXECUTABLE}" -p1 --forward --batch --fuzz=0 --no-backup-if-mismatch --quiet -i "${p}"
+        WORKING_DIRECTORY "${copy}" RESULT_VARIABLE rc)
+    else()
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" apply --whitespace=nowarn -p1 "${p}"
+        WORKING_DIRECTORY "${copy}" RESULT_VARIABLE rc)
+    endif()
     if(NOT rc EQUAL 0)
       message(FATAL_ERROR "${name} patch ${p} does not apply to third_party/${name}")
     endif()
